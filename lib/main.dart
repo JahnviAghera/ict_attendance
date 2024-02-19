@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:telephony/telephony.dart';
 
 void main() {
   runApp(MyApp());
@@ -36,21 +37,21 @@ class _MyHomePageState extends State<MyHomePage> {
     _loadAttendanceDirectories();
   }
 
-  // Load saved file names from the documents directory
   Future<void> _loadSavedFiles() async {
     try {
       Directory directory = await getApplicationDocumentsDirectory();
-      final files = directory
-          .listSync()
-          .where((entity) => entity.path.endsWith('.csv'))
-          .toList();
+      final files = directory.listSync().whereType<File>().where((file) => file.path.endsWith('.csv')).toList();
       setState(() {
         _savedFiles = files.map((file) => file.path.split('/').last).toList();
       });
+      print(_savedFiles);
     } catch (e) {
-      print('Failed to load saved CSV files: $e');
+      print('Failed to load subdirectories: $e');
     }
   }
+
+
+
 
 // Load attendance directory names
   Future<void> _loadAttendanceDirectories() async {
@@ -81,7 +82,11 @@ class _MyHomePageState extends State<MyHomePage> {
     return subdirectories;
   }
 
-
+  Future<void> _handleRefresh() async {
+    // Place your refresh logic here, for example:
+    await _loadSavedFiles();
+    await _loadAttendanceDirectories();
+  }
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -99,7 +104,11 @@ class _MyHomePageState extends State<MyHomePage> {
         body: TabBarView(
           children: [
             // Classes Tab
-            ListView.builder(
+        // Add the RefreshIndicator
+        RefreshIndicator(
+          onRefresh: _handleRefresh,
+          child:
+          ListView.builder(
               itemCount: _savedFiles.length,
               itemBuilder: (context, index) {
                 return ListTile(
@@ -118,6 +127,10 @@ class _MyHomePageState extends State<MyHomePage> {
                 );
               },
             ),
+        ),
+        RefreshIndicator(
+        onRefresh: _handleRefresh,
+        child:
             ListView.builder(
               itemCount: _attendanceDirectories.length,
               itemBuilder: (context, index) {
@@ -137,6 +150,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 );
               },
             ),
+        )
           ],
         ),
         floatingActionButton: FloatingActionButton(
@@ -205,16 +219,16 @@ class _ZipUploadPageState extends State<ZipUploadPage> {
             : result.files.single.name!;
 
         // Create directory if it does not exist
-        Directory filePathFinalDirectory = Directory('${directory.path}/$fileName');
+        Directory filePathFinalDirectory = Directory('${directory.path}');
+        print('${directory.path}');
         if (!filePathFinalDirectory.existsSync()) {
           filePathFinalDirectory.createSync(recursive: true);
         }
 
         // Copy file to the directory
-        File filePathFinal = File('${filePathFinalDirectory.path}/$fileName');
-        await file.copy(filePathFinal.path);
-
-        setState(() {
+        File filePathFinal = File('${filePathFinalDirectory.path}/$fileName.csv');
+        await file.copy(filePathFinal.path); // Change this line to use filePathFinal.path instead of filePathFinalDirectory.path
+      setState(() {
           _savedFiles.add(fileName);
         });
         print(filePathFinal);
@@ -284,10 +298,25 @@ class _ZipUploadPageState extends State<ZipUploadPage> {
           ? _FileNameController.text
           : 'images';
       print(imageDirectoryName);
-      Directory imagesDirectory =
-      Directory('${directory.path}/images/$imageDirectoryName');
+      Directory imagesDirectory = Directory('${directory.path}/images/$imageDirectoryName');
+      print('$imagesDirectory');
+
       if (!imagesDirectory.existsSync()) {
-        imagesDirectory.createSync();
+        try {
+          // Ensure parent directory exists
+          var parentDirectory = Directory('${directory.path}/images/');
+          if (!parentDirectory.existsSync()) {
+            parentDirectory.createSync(recursive: true); // Create parent directory if it doesn't exist
+          }
+
+          // Create images directory
+          imagesDirectory.createSync();
+          print('Directory created: ${imagesDirectory.path}');
+        } catch (e) {
+          print('Error creating directory: $e');
+        }
+      } else {
+        print('Directory already exists: ${imagesDirectory.path}');
       }
 
       // Read the zip file
@@ -468,11 +497,29 @@ class AttendanceDetails extends StatelessWidget {
   }
 
 }
-//TODO: WORK MORE ON ATTENDANCE DETIALS PAGE
-class AttendanceDetailsPage extends StatelessWidget {
+class AttendanceDetailsPage extends StatefulWidget {
   final String filePath;
 
   const AttendanceDetailsPage({Key? key, required this.filePath}) : super(key: key);
+
+  @override
+  _AttendanceDetailsPageState createState() => _AttendanceDetailsPageState();
+}
+
+class _AttendanceDetailsPageState extends State<AttendanceDetailsPage> {
+  late List<dynamic> imagePaths;
+  late String filePath;
+  late List<String> parts;
+  late List<List<dynamic>> attendanceData; // Define attendanceData variable
+  final Telephony telephony = Telephony.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    filePath = widget.filePath;
+    parts = filePath.split(RegExp(r'[/_]'));
+    print(parts);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -480,35 +527,83 @@ class AttendanceDetailsPage extends StatelessWidget {
       appBar: AppBar(
         title: Text('Attendance Details'),
       ),
-      body: FutureBuilder(
-        future: _loadAttendanceData(),
-        builder: (context, AsyncSnapshot<List<List<dynamic>>> snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(
-              child: CircularProgressIndicator(),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Date ${parts[0]}'),
+                          Text('Class ${parts[1]}'),
+                          Text('Subject ${parts[2]}'),
+                          Text('Time ${parts[3]} - ${parts[4].replaceAll(".csv", "")}'),
+                        ],
+                      ),
+                    ),
+                    FutureBuilder(
+                      future: _loadAttendanceData(),
+                      builder: (context, AsyncSnapshot<List<List<dynamic>>> snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        } else if (snapshot.hasError) {
+                          return Center(
+                            child: Text('Error: ${snapshot.error}'),
+                          );
+                        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                          return Center(
+                            child: Text('No data available'),
+                          );
+                        } else {
+                          attendanceData = snapshot.data!; // Assign snapshot data to attendanceData
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            physics: NeverScrollableScrollPhysics(),
+                            itemCount: attendanceData.length - 2,
+                            itemBuilder: (context, index) {
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: attendanceData[index + 2][3] == "true" ? Colors.green : Colors.red,
+                                ),
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  child: Row(
+                                    children: [
+                                      Text('${attendanceData[index + 2][0]}'),
+                                      SizedBox(width: 20),
+                                      Text('${attendanceData[index + 2][1]}'),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
             );
-          } else if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return Center(
-              child: Text('No data available'),
-            );
-          } else {
-            List<List<dynamic>> attendanceData = snapshot.data!;
-            return ListView.builder(
-              itemCount: attendanceData.length,
-              itemBuilder: (context, index) {
-                return ListTile(
-                  title: Text('${attendanceData[index][0]}'),
-                  subtitle: Text('${attendanceData[index][1]}'),
-                  // Add more details as needed
-                );
-              },
-            );
-          }
-        },
+          },
+        ),
+      ),
+      bottomNavigationBar: BottomAppBar(
+        child: ElevatedButton(
+          onPressed: () {
+            _sendSMS();
+          },
+          child: Text('Send SMS'),
+        ),
       ),
     );
   }
@@ -516,18 +611,51 @@ class AttendanceDetailsPage extends StatelessWidget {
   Future<List<List<dynamic>>> _loadAttendanceData() async {
     try {
       var documentsDirectory = await getApplicationDocumentsDirectory();
-      var path = '${documentsDirectory.path}/attendance/$filePath';
+      var path = '${documentsDirectory.path}/attendance/${widget.filePath}';
       File file = File(path);
       print(file);
       // if (await file.exists()) {
-        String contents = await file.readAsString();
-        List<List<dynamic>> data = CsvToListConverter().convert(contents);
-        return data;
+      String contents = await file.readAsString();
+      List<List<dynamic>> data = CsvToListConverter().convert(contents);
+      return data;
     } catch (e) {
       throw 'Failed to load attendance data: $e';
     }
   }
+
+  Future<void> _sendSMS() async {
+    List<String> recipients = [];
+    String message = 'Your attendance is marked as absent. Please check with your instructor.';
+    // bool? permissionsGranted = await telephony.requestPhoneAndSmsPermissions;
+    // Iterate through attendanceData and collect phone numbers where attendanceData[index + 2][3] == "false"
+    for (int index = 0; index < attendanceData.length - 2; index++) {
+      if (attendanceData[index + 2][3] == "false") {
+        message ='Dear Parents, we wanted to inform you that ${attendanceData[index + 2][1]} was absent for ${parts[2]}\'s lecture today, ${parts[0]}. If you are aware of any specific reason for ${attendanceData[index + 2][1]}\'s absence today, please let us know. Thank you.';
+        print(message);
+        telephony.sendSms(
+            to: '+${attendanceData[index + 2][2].toString()}',
+            message: '${attendanceData[index + 2][1]} was absent'
+        );
+        // telephony.sendSms(
+        //   to: '+918799448954',
+        //   message: 'message.text',
+        // );
+        // print('Dear Parents, we wanted to inform you that ${attendanceData[index + 2][1]} was absent for ${parts[2]}\'s lecture today, ${parts[0]}. If you are aware of any specific reason for ${attendanceData[index + 2][1]}\'s absence today, please let us know. Thank you.');
+        // recipients.add(attendanceData[index + 2][2]); // Assuming phone number is stored at index 2
+      }
+    }
+
+
+    // Use the flutter_sms package to send SMS
+    // sendSMS(
+    //   message: message,
+    //   recipients: recipients,
+    // ).catchError((onError) {
+    //   print(onError);
+    // });
+  }
 }
+
 class ViewClass extends StatefulWidget {
   final String fileName;
 
@@ -544,13 +672,16 @@ class _ViewClassState extends State<ViewClass> {
   @override
   void initState() {
     super.initState();
+    csvData = [];
+    imagePaths = [];
     _loadData();
+
   }
 
   Future<void> _loadData() async {
     try {
       Directory directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/${widget.fileName}/${widget.fileName}');
+      final file = File('${directory.path}/${widget.fileName}');
       print('File path: ${file.path}'); // Log the file path
       if (await file.exists()) {
         String contents = await file.readAsString();
@@ -639,6 +770,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   TextEditingController timeController = TextEditingController();
   TextEditingController totimeController = TextEditingController();
   TextEditingController dateController = TextEditingController();
+  TextEditingController classController = TextEditingController();
   String dropdownValue = 'Class 1'; // Default value for dropdown
   // late List<String> imagePaths; // Add imagePaths
 
@@ -773,6 +905,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               onChanged: (value) async {
                 setState(() {
                   selectedClass = value as String?;
+                  classController.text = value!;
                 });
                 // await _loadClassData();
                 // await _loadImages();
@@ -901,7 +1034,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             String subject = subjectController.text;
             String time = timeController.text;
             String date = dateController.text;
-            String selectedClass = dropdownValue; // Assuming you store the selected class value in a variable
+            String selectedClass = classController.text.replaceAll(".csv", ""); // Assuming you store the selected class value in a variable
             _saveAttendance(subject, time, date, selectedClass);
           },
           child: Text('Save'),
@@ -925,7 +1058,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       List<List<dynamic>> attendanceRows = [
         ['Enrollment Number', 'Student Name', 'Phone Number','Is Present']
       ];
-      for (var student in classData) {
+      for (var student in csvData) {
         attendanceRows.add([
           student[0], // Enrollment Number
           student[1], // Student Name
@@ -980,7 +1113,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   Future<void> _loadData() async {
     try {
       Directory directory = await getApplicationDocumentsDirectory();
-      File file = File('${directory.path}/$selectedClass/$selectedClass');
+      File file = File('${directory.path}/$selectedClass');
       print('File path: ${file.path}'); // Log the file path
       if (await file.exists()) {
         String contents = await file.readAsString();
