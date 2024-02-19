@@ -634,7 +634,7 @@ class _AttendanceDetailsPageState extends State<AttendanceDetailsPage> {
         print(message);
         telephony.sendSms(
             to: '+${attendanceData[index + 2][2].toString()}',
-            message: '${attendanceData[index + 2][1]} was absent'
+            message: 'Respected Parents, ${attendanceData[index + 2][1]} was absent for ${parts[0]}, ${parts[1]} lecture from ${parts[3]} - ${parts[4].replaceAll(".csv", "")}'
         );
         // telephony.sendSms(
         //   to: '+918799448954',
