@@ -45,6 +45,8 @@ dependencies:
   csv: ^5.1.1
   archive: ^3.4.10
   telephony: ^0.2.0
+  google_fonts: ^6.1.0
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:

@@ -5,6 +5,8 @@ import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:telephony/telephony.dart';
 
@@ -17,6 +19,11 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       home: MyHomePage(),
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.blue, // Set primary color to blue
+        scaffoldBackgroundColor: Colors.white
+      ),
     );
   }
 }
@@ -93,12 +100,31 @@ class _MyHomePageState extends State<MyHomePage> {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: Text('My App'),
+          title: Text('Attendance Management',
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.w500
+          ),),
+          backgroundColor: Colors.white,
           bottom: TabBar(
             tabs: [
-              Tab(text: 'Classes'),
+              Tab(text: 'Classes',),
               Tab(text: 'Saved Attendance'),
             ],
+            labelStyle: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w500
+            ),
+            labelColor: Colors.blue,
+            indicatorColor: Colors.blue,
+            overlayColor: MaterialStateProperty.resolveWith<Color>(
+                  (Set<MaterialState> states) {
+                if (states.contains(MaterialState.hovered)) {
+                  return Colors.blue.withOpacity(0.2); // Set overlay color when tab is hovered
+                }
+                return Colors.transparent; // Set overlay color when tab is not hovered
+              },
+            ),
           ),
         ),
         body: TabBarView(
@@ -112,7 +138,10 @@ class _MyHomePageState extends State<MyHomePage> {
               itemCount: _savedFiles.length,
               itemBuilder: (context, index) {
                 return ListTile(
-                  title: Text(_savedFiles[index]),
+                  title: Text(_savedFiles[index].replaceAll(".csv", ""),
+                  style: GoogleFonts.poppins(
+                    letterSpacing: 2
+                  ),),
                   onTap: () {
                     print(_savedFiles[index]);
                     // Navigate to the bulk upload screen with the selected file name
@@ -135,7 +164,10 @@ class _MyHomePageState extends State<MyHomePage> {
               itemCount: _attendanceDirectories.length,
               itemBuilder: (context, index) {
                 return ListTile(
-                  title: Text(_attendanceDirectories[index]),
+                  title: Text(DateFormat('d MMMM, y').format(DateTime.parse(_attendanceDirectories[index])),
+                    style: GoogleFonts.poppins(
+                        letterSpacing: 2
+                    ),),
                   onTap: () {
                     // Navigate to the attendance details screen with the selected directory name
                     Navigator.push(
@@ -161,7 +193,15 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
         bottomNavigationBar: BottomAppBar(
           child: ElevatedButton(
-            child: Text("TAKE ATTENDANCE"),
+            style: ButtonStyle(
+                backgroundColor:MaterialStateProperty.all<Color>(Colors.blue),
+            ),
+            child: Text("TAKE ATTENDANCE",
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 16
+            ),),
             onPressed: (){
               Navigator.push(context, MaterialPageRoute(builder: (context)=>TakeAttendanceScreen(savedFiles: _savedFiles)));
             },
@@ -450,8 +490,19 @@ class AttendanceDetails extends StatelessWidget {
             return ListView.builder(
               itemCount: attendanceFiles.length,
               itemBuilder: (context, index) {
-                return ListTile(
-                  title: Text(attendanceFiles[index]),
+                return GestureDetector(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Container(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(attendanceFiles[index].replaceAll(".csv", "").trim().split('_').last),
+                          Text(attendanceFiles[index].replaceAll(".csv", "").trim().split('_').first),
+                        ],
+                      ),
+                    ),
+                  ),
                   onTap: () {
                     Navigator.push(
                       context,
@@ -544,7 +595,7 @@ class _AttendanceDetailsPageState extends State<AttendanceDetailsPage> {
                           Text('Date ${parts[0]}'),
                           Text('Class ${parts[1]}'),
                           Text('Subject ${parts[2]}'),
-                          Text('Time ${parts[3]} - ${parts[4].replaceAll(".csv", "")}'),
+                          // Text('Time ${parts[3]} - ${parts[4].replaceAll(".csv", "")}'),
                         ],
                       ),
                     ),
@@ -624,6 +675,7 @@ class _AttendanceDetailsPageState extends State<AttendanceDetailsPage> {
   }
 
   Future<void> _sendSMS() async {
+
     List<String> recipients = [];
     String message = 'Your attendance is marked as absent. Please check with your instructor.';
     // bool? permissionsGranted = await telephony.requestPhoneAndSmsPermissions;
@@ -634,7 +686,7 @@ class _AttendanceDetailsPageState extends State<AttendanceDetailsPage> {
         print(message);
         telephony.sendSms(
             to: '+${attendanceData[index + 2][2].toString()}',
-            message: 'Respected Parents, ${attendanceData[index + 2][1]} was absent for ${parts[0]}, ${parts[1]} lecture from ${parts[3]} - ${parts[4].replaceAll(".csv", "")}'
+            message: 'Respected Parents, ${attendanceData[index + 2][1]} was absent for ${parts[0]}, ${parts[2].replaceAll(".csv", "")} lecture.'
         );
         // telephony.sendSms(
         //   to: '+918799448954',
@@ -668,14 +720,61 @@ class ViewClass extends StatefulWidget {
 class _ViewClassState extends State<ViewClass> {
   late List<dynamic> csvData;
   late List<dynamic> imagePaths;
-
+  List<bool> selectedStudents = []; // List to keep track of selected students
+  TextEditingController messageController = TextEditingController();
+  Telephony telephony = Telephony.instance;
+  late String parentDirectory = "";
   @override
   void initState() {
     super.initState();
     csvData = [];
     imagePaths = [];
     _loadData();
-
+    // parentDirectory ='${}/images/${widget.fileName.replaceAll(".csv", "")}';
+    // print('PARENT DIRECTORY $parentDirectory');
+  }
+  void _showBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20,vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (int i = 0; i < csvData[0].length; i++)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: ElevatedButton(
+                    onPressed: () {
+                      // Append the index variable to the message
+                      messageController.text += '\${index[$i]}';
+                    },
+                    child: Text(
+                      '${csvData[0][i]}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: TextFormField(
+                  controller: messageController,
+                  decoration: InputDecoration(
+                    labelText: 'Compose Message',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 5,
+                ),
+              ),
+              ElevatedButton(onPressed: (){
+                sendMessage(messageController.text);
+              }, child: Text("SEND"))
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _loadData() async {
@@ -686,17 +785,24 @@ class _ViewClassState extends State<ViewClass> {
       if (await file.exists()) {
         String contents = await file.readAsString();
         csvData = CsvToListConverter().convert(contents);
-
+        print('LENGHT ${csvData.length}');
         // Load images from the directory
         imagePaths = [];
         Directory imageDir = Directory('${directory.path}/images/${widget.fileName.replaceAll(".csv", "")}');
         print(imageDir);
-
+        setState(() {
+          parentDirectory = imageDir.path;
+        });
+        // Send message to selected student with their information and image directory
         if (await imageDir.exists()) {
           List<FileSystemEntity> imageFiles = imageDir.listSync();
           imagePaths = imageFiles.map((imageFile) => imageFile.path).toList();
           print(imagePaths);
+
         }
+
+        // Initialize selectedStudents list
+        selectedStudents = List.generate(csvData.length, (index) => false);
 
         setState(() {}); // Update the state to rebuild the UI with the loaded data
       } else {
@@ -709,51 +815,144 @@ class _ViewClassState extends State<ViewClass> {
     }
   }
 
+  // Method to send personal messages to selected students
+  void sendMessage(String message) {
+    // Implement your logic to compose and send messages here
+    // You can access selected students using the selectedStudents list
+    // and their corresponding information from csvData
+
+    // if (sendToAll) {
+    //   for (int i = 0; i < selectedStudents.length; i++) {
+    //     if (selectedStudents[i]) {
+    //       String name = csvData[i][0].toString();
+    //       String enrollmentNumber = csvData[i][1].toString();
+    //       // Send message to student with 'name' and 'enrollmentNumber'
+    //       print('Message sent to $name with enrollment number $enrollmentNumber');
+    //     }
+    //   }
+    // } else {
+    for (int i = 0; i < selectedStudents.length; i++) {
+      if (selectedStudents[i]) {
+        String message = messageController.text;
+
+        // Replace placeholders with actual student data
+        for (int j = 0; j < csvData[i].length; j++) {
+          String columnIndexVariable = '\${index[$j]}';
+          String columnValue = csvData[i][j].toString();
+          // Replace columnIndexVariable with columnValue in the message
+          message = message.replaceAll(columnIndexVariable, columnValue);
+        }
+        sendSMS(message, csvData[i][2].toString());
+        // Send message to selected student with their information
+        print('Message sent: $message');
+      }
+    }
+
+
+    // }
+  }
+  sendSMS(String message,String number){
+    telephony.sendSms(to: number, message: message);
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.fileName),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.send),
+            onPressed: () => _showBottomSheet(context), // Send message to selected students
+          ),
+        ],
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      body:ListView.builder(
+        itemCount: csvData.length-1,
+        itemBuilder: (context, index) {
+          return Row(
             children: [
-              if (csvData != null && imagePaths != null)
-                // int i = 1; // Start index for csvData
-                // int j = 0; // Start index for imagePaths
-                for (int i = 0; i <= csvData.length && i <= imagePaths.length; i++)
-                  Row(
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if(i==0)
-                        SizedBox()
-                      else
-                        Expanded(
-                        child: Text(csvData[i][0].toString()), // Display CSV data
-                        ),
-                      SizedBox(width: 10), // Add some spacing between the text and image
-                      if(i==0)
-                        SizedBox()
-                      else
-                        Container(
-                          height: 150,
-                          width: 150,
-                          child: Image.file(
-                            File(imagePaths[i-1].toString()),
-                            height: 150,
-                            fit: BoxFit.fitWidth, // or BoxFit.cover depending on your preference
-                          ),
-                        )
+                      Text(csvData[index+1][0].toString()),
+                      Text(csvData[index+1][1].toString()),
                     ],
                   ),
+                )
+              ),
+              SizedBox(width: 10), // Add some spacing between the text and image
+              Container(
+                height: 150,
+                width: 150,
+                child: Image.file(
+                  File('$parentDirectory/${csvData[index+1][0].toString().substring(csvData[index+1][0].toString().length - 2)}.png'),
+                  height: 150,
+                  fit: BoxFit.fitWidth, // or BoxFit.cover depending on your preference
+                ),
+              ),
+              Checkbox(
+                value: selectedStudents[index+1],
+                onChanged: (value) {
+                  setState(() {
+                    selectedStudents[index+1] = value!;
+                  });
+                },
+              ),
             ],
-          ),
-        ),
+          );
+        },
       ),
+
+      // SafeArea(
+      //   child: SingleChildScrollView(
+      //     child: ,
+      //     // child: Column(
+      //     //   crossAxisAlignment: CrossAxisAlignment.start,
+      //     //   children: [
+      //     //     // if (csvData != null && imagePaths != null)
+      //     //     //   for (int i = 1; i <= csvData.length && i <= imagePaths.length; i++)
+      //     //     //     Row(
+      //     //     //       children: [
+      //     //     //         Expanded(
+      //     //     //           child: Text(csvData[i][0].toString()), // Display CSV data
+      //     //     //         ),
+      //     //     //         SizedBox(width: 10), // Add some spacing between the text and image
+      //     //     //         Container(
+      //     //     //           height: 150,
+      //     //     //           width: 150,
+      //     //     //           child:
+      //     //     //           // Text('${parentDirectory}/${csvData[i][0].toString().substring(csvData[i][0].toString().startsWith('0') ? 1 : csvData[i][0].toString().length - 2)}.png')
+      //     //     //           Image.file(
+      //     //     //             File('${parentDirectory}/${csvData[i][0].toString().substring(csvData[i][0].toString().length - 2)}.png'),
+      //     //     //             height: 150,
+      //     //     //             fit: BoxFit.fitWidth, // or BoxFit.cover depending on your preference
+      //     //     //           ),
+      //     //     //         ),
+      //     //     //         Checkbox(
+      //     //     //           value: selectedStudents[i],
+      //     //     //           onChanged: (value) {
+      //     //     //             setState(() {
+      //     //     //               selectedStudents[i] = value!;
+      //     //     //             });
+      //     //     //           },
+      //     //     //         ),
+      //     //     //       ],
+      //     //     //     ),
+      //     //
+      //     //   ],
+      //     // ),
+      //   ),
+      // ),
+
     );
   }
 }
+
+
+
 class TakeAttendanceScreen extends StatefulWidget {
   final List<String> savedFiles;
 
@@ -806,60 +1005,60 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             ),
             SizedBox(height: 20.0),
 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Column(
-                  children: [
-                    Text(
-                      'From Time:',
-                      style: TextStyle(fontSize: 18.0),
-                    ),
-                    Text(timeController.text),
-                    TextButton(
-                      onPressed: () async {
-                        final TimeOfDay? pickedTime = await showTimePicker(
-                          context: context,
-                          initialTime: TimeOfDay.now(),
-                        );
-                        if (pickedTime != null) {
-                          setState(() {
-                            // Update the dateController with the selected time
-                            timeController.text = pickedTime.format(context);
-                          });
-                        }
-                      },
-                      child: Text('Select Time'),
-                    ),
-                  ],
-                ),
-                Column(
-                  children: [
-                    Text(
-                      'TO Time:',
-                      style: TextStyle(fontSize: 18.0),
-                    ),
-                    Text(totimeController.text),
-                    TextButton(
-                      onPressed: () async {
-                        final TimeOfDay? pickedTime = await showTimePicker(
-                          context: context,
-                          initialTime: TimeOfDay.now(),
-                        );
-                        if (pickedTime != null) {
-                          setState(() {
-                            // Update the dateController with the selected time
-                            totimeController.text = pickedTime.format(context);
-                          });
-                        }
-                      },
-                      child: Text('Select Time'),
-                    ),
-                  ],
-                )
-
-              ],
-            ),
+            // Row(
+            //   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            //   children: [
+            //     Column(
+            //       children: [
+            //         Text(
+            //           'From Time:',
+            //           style: TextStyle(fontSize: 18.0),
+            //         ),
+            //         Text(timeController.text),
+            //         TextButton(
+            //           onPressed: () async {
+            //             final TimeOfDay? pickedTime = await showTimePicker(
+            //               context: context,
+            //               initialTime: TimeOfDay.now(),
+            //             );
+            //             if (pickedTime != null) {
+            //               setState(() {
+            //                 // Update the dateController with the selected time
+            //                 timeController.text = pickedTime.format(context);
+            //               });
+            //             }
+            //           },
+            //           child: Text('Select Time'),
+            //         ),
+            //       ],
+            //     ),
+            //     Column(
+            //       children: [
+            //         Text(
+            //           'TO Time:',
+            //           style: TextStyle(fontSize: 18.0),
+            //         ),
+            //         Text(totimeController.text),
+            //         TextButton(
+            //           onPressed: () async {
+            //             final TimeOfDay? pickedTime = await showTimePicker(
+            //               context: context,
+            //               initialTime: TimeOfDay.now(),
+            //             );
+            //             if (pickedTime != null) {
+            //               setState(() {
+            //                 // Update the dateController with the selected time
+            //                 totimeController.text = pickedTime.format(context);
+            //               });
+            //             }
+            //           },
+            //           child: Text('Select Time'),
+            //         ),
+            //       ],
+            //     )
+            //
+            //   ],
+            // ),
             SizedBox(height: 20.0),
             Text(
               'Date',
@@ -1047,7 +1246,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
       // Get the document directory
       Directory directory = await getApplicationDocumentsDirectory();
       String folderPath = '${directory.path}/attendance/$date';
-      String filePath = '$folderPath/${selectedClass}_${subject}_${timeController.text}_${totimeController.text}.csv';
+      String filePath = '$folderPath/${selectedClass}_${subject}.csv';
+      // String filePath = '$folderPath/${selectedClass}_${subject}_${timeController.text}_${totimeController.text}.csv';
 
       // Create directory if it doesn't exist
       if (!(await Directory(folderPath).exists())) {
